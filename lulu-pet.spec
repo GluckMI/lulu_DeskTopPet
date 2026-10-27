@@ -1,4 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
+# Windows build spec for Lulu Desktop Pet.
+# Build:  pyinstaller lulu-pet.spec --noconfirm --clean
+# Output: dist/LuluDesktopPet/  (keep the whole folder together)
 
 from pathlib import Path
 
@@ -12,13 +15,18 @@ a = Analysis(
         (str(ROOT / "assets"), "assets"),
         (str(ROOT / "config"), "config"),
     ],
-    hiddenimports=[],
+    hiddenimports=[
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
+        "PySide6.QtCore",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
     noarchive=False,
 )
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -27,18 +35,20 @@ exe = EXE(
     [],
     exclude_binaries=True,
     name="LuluDesktopPet",
+    icon=str(ROOT / "assets" / "lulu_icon.ico") if (ROOT / "assets" / "lulu_icon.ico").exists() else None,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     console=False,
 )
+
 coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     name="LuluDesktopPet",
 )

@@ -1,0 +1,53 @@
+name: Build Lulu Desktop Pet (Windows + macOS)
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Build Windows (.exe)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Generate icons
+        run: python scripts/build_icons.py
+      - name: Build with PyInstaller
+        run: pyinstaller lulu-pet.spec --noconfirm --clean
+      - name: Zip artifact
+        run: python -c "import zipfile,os; src='dist/LuluDesktopPet'; out='LuluDesktopPet-win64.zip'; os.path.exists(out) and os.remove(out); z=zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED); [z.write(os.path.join(r,f), os.path.relpath(os.path.join(r,f),'dist')) for r,_,fs in os.walk(src) for f in fs]; print('wrote', out)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LuluDesktopPet-windows
+          path: LuluDesktopPet-win64.zip
+
+  macos:
+    name: Build macOS (.app)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: python3 -m pip install -r requirements.txt
+      - name: Generate icons
+        run: python3 scripts/build_icons.py
+      - name: Build with PyInstaller
+        run: pyinstaller build_macos.spec --noconfirm --clean
+      - name: Ad-hoc sign and zip
+        run: |
+          codesign --deep --force --sign - dist/LuluDesktopPet.app
+          xattr -dr com.apple.quarantine dist/LuluDesktopPet.app 2>/dev/null || true
+          ditto -c -k --keepParent dist/LuluDesktopPet.app LuluDesktopPet-macos.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LuluDesktopPet-macos
+          path: LuluDesktopPet-macos.zip
