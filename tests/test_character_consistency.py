@@ -27,26 +27,25 @@ class CharacterConsistencyTests(unittest.TestCase):
         )
         window = PetWindow(PetController(AssetManager(None)), settings)
         try:
-            body_modes = (
-                MotionMode.IDLE,
-                MotionMode.WALK_LEFT,
-                MotionMode.WALK_RIGHT,
-                MotionMode.RUN_LEFT,
-                MotionMode.RUN_RIGHT,
-                MotionMode.ROLL_LEFT,
-                MotionMode.ROLL_RIGHT,
-                MotionMode.SLEEP,
-            )
+            # 待机走随机池、翻滚走移动本体、睡眠走休息槽
+            self.assertEqual(window._character_key_for_mode(MotionMode.IDLE), "idle")
+            self.assertEqual(window._character_key_for_mode(MotionMode.ROLL_LEFT), "move")
+            self.assertEqual(window._character_key_for_mode(MotionMode.ROLL_RIGHT), "move")
+            self.assertEqual(window._character_key_for_mode(MotionMode.SLEEP), "rest")
+            right_modes = (MotionMode.WALK_RIGHT, MotionMode.RUN_RIGHT)
+            left_modes = (MotionMode.WALK_LEFT, MotionMode.RUN_LEFT)
 
-            body_keys = {window._character_key_for_mode(mode) for mode in body_modes}
+            right_keys = {window._character_key_for_mode(mode) for mode in right_modes}
+            left_keys = {window._character_key_for_mode(mode) for mode in left_modes}
             lifted_keys = {
                 window._character_key_for_mode(MotionMode.DRAGGED),
                 window._character_key_for_mode(MotionMode.FALLING),
             }
 
-            self.assertEqual(body_keys, {"body"})
+            self.assertEqual(right_keys, {"run_right"})
+            self.assertEqual(left_keys, {"run_left"})
             self.assertEqual(lifted_keys, {"lifted"})
-            self.assertEqual(window._character_assets["lifted"].name, "xhs_lulu_01.gif")
+            self.assertEqual(window._slot_asset("lifted").name, "cat_jump.gif")
         finally:
             window.close()
 
@@ -72,7 +71,7 @@ class CharacterConsistencyTests(unittest.TestCase):
                 window._on_tick()
 
             self.assertEqual(window.motion.mode, MotionMode.IDLE)
-            self.assertEqual(window._character_key, "body")
+            self.assertEqual(window._character_key, "idle")
         finally:
             window.close()
 

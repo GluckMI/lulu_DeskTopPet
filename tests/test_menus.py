@@ -56,7 +56,7 @@ class MenuTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_pet_context_menu_hides_manual_random_and_settings_actions(self):
+    def test_pet_context_menu_shows_settings_and_hides_manual_random(self):
         with tempfile.TemporaryDirectory() as tmp:
             store = FocusRecordStore(Path(tmp) / "focus_records.json")
             window = PetWindow(PetController(AssetManager(None)), default_settings(), focus_record_store=store)
@@ -66,7 +66,7 @@ class MenuTests(unittest.TestCase):
 
                 self.assertNotIn("随机运动", texts)
                 self.assertNotIn("随机表情包", texts)
-                self.assertNotIn("设置", texts)
+                self.assertIn("设置", texts)
                 self.assertIn("专注模式", texts)
                 self.assertIn("休息一下", texts)
                 self.assertIn("签订契约", texts)
@@ -137,47 +137,28 @@ class MenuTests(unittest.TestCase):
             change_menu = submenu_by_text(menu, "更换形象")
             texts = action_texts(change_menu)
 
-            self.assertEqual(
-                texts,
-                [
-                    "游泳噜噜",
-                    "睡衣噜噜",
-                    "得瑟噜噜",
-                    "小鸭噜噜",
-                    "小象噜噜",
-                    "野人噜噜",
-                    "粉嘟嘟噜",
-                    "霸王龙噜",
-                ],
-            )
+            # 菜单由注册表驱动，只保留两个形象
+            self.assertEqual(texts, ["呆猫八条", "噜噜"])
 
-            swim_action = next(action for action in change_menu.actions() if action.text() == "游泳噜噜")
-            swim_action.trigger()
+            # 默认形象就是呆猫八条
+            self.assertEqual(window._spec.character_id, "batiao")
+            self.assertEqual(window._rest_character_asset.name, "cat_fail.gif")
 
-            self.assertEqual(window._character_assets["body"].name, "lulu_transparent_01.gif")
+            cat_action = next(action for action in change_menu.actions() if action.text() == "呆猫八条")
+            cat_action.trigger()
+            self.assertEqual(window._spec.character_id, "batiao")
+            self.assertFalse(window._spec.mirror_facing)
+            self.assertEqual(window._slot_asset("lifted").name, "cat_jump.gif")
+            self.assertEqual(window._slot_asset("run_right").name, "cat_run_right.gif")
+            self.assertEqual(window._slot_asset("run_left").name, "cat_run_left.gif")
 
-            pajama_action = next(action for action in change_menu.actions() if action.text() == "睡衣噜噜")
-            pajama_action.trigger()
-
-            self.assertEqual(window._character_assets["body"].name, "xhs_lulu_02.gif")
-
-            proud_action = next(action for action in change_menu.actions() if action.text() == "得瑟噜噜")
-            proud_action.trigger()
-
-            self.assertEqual(window._character_assets["body"].name, "lulu_transparent_09.gif")
-
-            custom_characters = {
-                "小鸭噜噜": "640 - 2026-05-14T123937.674.gif",
-                "小象噜噜": "640 (81).gif",
-                "野人噜噜": "640 (21).gif",
-                "粉嘟嘟噜": "640 (94).gif",
-                "霸王龙噜": "640 (98).gif",
-            }
-            for label, filename in custom_characters.items():
-                action = next(action for action in change_menu.actions() if action.text() == label)
-                action.trigger()
-
-                self.assertEqual(window._character_assets["body"].name, filename)
+            lulu_action = next(action for action in change_menu.actions() if action.text() == "噜噜")
+            lulu_action.trigger()
+            self.assertEqual(window._spec.character_id, "lulu")
+            self.assertTrue(window._spec.mirror_facing)
+            self.assertEqual(window._rest_character_asset.name, "qq_lulu_04.gif")
+            # 噜噜没有方向跑图，移动回落到固定本体
+            self.assertEqual(window._slot_asset("run_right").name, "lulu_transparent_09.gif")
         finally:
             window.close()
 
@@ -262,7 +243,7 @@ class MenuTests(unittest.TestCase):
         finally:
             window.close()
 
-    def test_tray_menu_hides_manual_random_and_settings_actions(self):
+    def test_tray_menu_shows_settings_and_hides_manual_random(self):
         window = PetWindow(PetController(AssetManager(None)), default_settings())
         tray = TrayController(window)
         try:
@@ -271,7 +252,7 @@ class MenuTests(unittest.TestCase):
 
             self.assertNotIn("随机运动", texts)
             self.assertNotIn("随机表情包", texts)
-            self.assertNotIn("设置", texts)
+            self.assertIn("设置", texts)
             self.assertIn("显示/隐藏", texts)
             self.assertIn("专注模式", texts)
             self.assertIn("休息一下", texts)

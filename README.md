@@ -19,14 +19,18 @@
 推荐普通用户使用打包版，不需要安装 Python。
 
 1. 打开项目的 GitHub Releases 页面。
-2. 下载最新版本里的 `LuluDesktopPet.rar`。
+2. 按你的系统下载对应压缩包：
+   - **Windows**：`LuluDesktopPet-win64.zip`
+   - **macOS**：`LuluDesktopPet-macos.zip`（`.app` 已做 ad-hoc 签名）
 3. 解压整个压缩包。
-4. 进入解压后的 `LuluDesktopPet/` 文件夹。
-5. 双击运行 `LuluDesktopPet.exe`。
+4. 进入解压后的文件夹：
+   - **Windows**：进入 `LuluDesktopPet/`，双击运行 `LuluDesktopPet.exe`。
+   - **macOS**：把 `LuluDesktopPet.app` 拖入「应用程序」，首次打开时右键点击选「打开」。
+5. 双击运行即可。
 
-注意：不要只把 `LuluDesktopPet.exe` 单独拖出来运行。这个程序依赖同目录下的 `_internal/`、`assets/`、`config/` 等文件夹，必须保持整个文件夹结构完整。
+注意（Windows）：不要只把 `LuluDesktopPet.exe` 单独拖出来运行。这个程序依赖同目录下的 `_internal/`、`assets/`、`config/` 等文件夹，必须保持整个文件夹结构完整。
 
-如果 Windows SmartScreen 提示风险，可以点“更多信息”，再选择“仍要运行”。这是未签名个人应用常见提示。
+如果 Windows SmartScreen 提示风险，可以点“更多信息”，再选择“仍要运行”。这是未签名个人应用常见提示。macOS 首次打开若被拦截，按上面的方式右键「打开」一次即可。
 
 ### 方式二：从源码运行 🛠️
 
@@ -119,26 +123,53 @@ python run_lulu_pet.py
 
 ## 自己打包 🧰
 
-如果你想从源码生成 Windows 可执行版本：
+项目提供 Windows 与 macOS 两套打包配置（图标由 `scripts/build_icons.py` 从素材 GIF 自动生成，无需手动准备）。
+
+> ⚠️ **PyInstaller 不能跨平台编译**：必须在目标系统上打包。Windows 版只能在 Windows 上打，macOS 版（`.app`）只能在 Mac 上打。下方脚本已分别封装好这几步。
+
+### Windows（在本机执行）
 
 ```powershell
+# 方式一：一键脚本
+.\build_windows.bat
+
+# 方式二：手动
 pip install -r requirements.txt
-pyinstaller lulu-pet.spec
+python scripts\build_icons.py
+pyinstaller lulu-pet.spec --noconfirm --clean
 ```
 
-打包完成后，结果会生成在：
+结果在 `dist/LuluDesktopPet/`（整个文件夹必须保持完整），可压缩为 `LuluDesktopPet-win64.zip` 分发。
 
-```text
-dist/LuluDesktopPet/
+### macOS（在 Mac 上执行）
+
+```bash
+# 方式一：一键脚本（含 ad-hoc 签名，便于首次打开）
+bash build_macos.sh
+
+# 方式二：手动
+python3 -m pip install -r requirements.txt
+python3 scripts/build_icons.py
+pyinstaller build_macos.spec --noconfirm --clean
+codesign --deep --force --sign - dist/LuluDesktopPet.app
+ditto -c -k --keepParent dist/LuluDesktopPet.app LuluDesktopPet-macos.zip
 ```
+
+结果在 `dist/LuluDesktopPet.app`。未签名应用在首次打开时会被 Gatekeeper 拦截，右键点击应用选「打开」即可；或在终端执行 `xattr -dr com.apple.quarantine dist/LuluDesktopPet.app`。
+
+### 用 GitHub Actions 同时产出两个平台（推荐）
+
+仓库已内置 `.github/workflows/build.yml`：给仓库打 `v*` 标签或手动触发 `workflow_dispatch`，即可在 `windows-latest` 与 `macos-latest` 上分别构建，并把 `LuluDesktopPet-win64.zip` 与 `LuluDesktopPet-macos.zip` 作为 Artifact 上传。无需本地准备两台机器。
 
 ## 素材与配置 🎨
 
 主要素材目录：
 
 ```text
-assets/lulu_transparent_gifs/
-assets/lulu_FocusMode/
+assets/characters/lulu/   主形象（透明 GIF 动作素材）
+assets/characters/batiao/ 新增「八条」猫形象
+assets/lulu_FocusMode/    专注模式素材
+assets/lulu_cat/          猫形象静态图
 ```
 
 配置文件：
@@ -148,7 +179,7 @@ assets/lulu_FocusMode/
 - `config/focus_records.json` 保存专注模式学习记录。
 - `config/*_records.json` 保存各小游戏最高纪录；这些文件由游戏运行时按需创建。
 
-更换形象菜单使用 `assets/lulu_transparent_gifs/` 下的透明 GIF。默认形象、游泳形象、睡衣形象和新增形象入口在 `lulu_pet/pet_window.py` 中维护；如果要继续增加形象，需要把 GIF 放入该目录，并在 `EXTRA_CHARACTER_GIFS` 里补充菜单名称和文件名。
+更换形象菜单使用 `assets/characters/lulu/` 下的透明 GIF。默认形象、游泳形象、睡衣形象和新增形象入口在 `lulu_pet/pet_window.py` 中维护；如果要继续增加形象，需要把 GIF 放入该目录，并在 `EXTRA_CHARACTER_GIFS` 里补充菜单名称和文件名。
 
 项目结构：
 

@@ -5,8 +5,11 @@
   ],
   "always_on_top": true,
   "speech_interval_seconds": 45,
-  "edge_snap": true,
-  "autostart": true,
+  "edge_snap": false,
+  "autostart": false,
   "motion_speed_percent": 100,
-  "contract_name": "cc"
+  "contract_name": "🐟️",
+  "sticker_playback_percent": 70,
+  "character_playback_percent": 60,
+  "idle_switch_interval_seconds": 8
 }

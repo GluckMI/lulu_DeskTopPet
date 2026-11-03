@@ -143,7 +143,7 @@ class AssetManagerTests(unittest.TestCase):
     def test_packaged_manifest_references_current_gif_pool(self):
         manifest_path = resource_path("assets", "manifest.json")
         manager = AssetManager(manifest_path)
-        gif_dir = resource_path("assets", "lulu_transparent_gifs")
+        gif_dir = resource_path("assets", "characters", "lulu")
         manifest_paths = {
             path
             for name in manager.action_names

@@ -30,6 +30,24 @@ class SettingsDialog(QDialog):
         self.speech_interval.setSingleStep(5)
         self.speech_interval.setValue(settings.speech_interval_seconds)
 
+        self.sticker_speed = QSpinBox(self)
+        self.sticker_speed.setRange(20, 100)
+        self.sticker_speed.setSuffix("%")
+        self.sticker_speed.setSingleStep(5)
+        self.sticker_speed.setValue(settings.sticker_playback_percent)
+
+        self.character_speed = QSpinBox(self)
+        self.character_speed.setRange(20, 100)
+        self.character_speed.setSuffix("%")
+        self.character_speed.setSingleStep(5)
+        self.character_speed.setValue(settings.character_playback_percent)
+
+        self.idle_interval = QSpinBox(self)
+        self.idle_interval.setRange(3, 60)
+        self.idle_interval.setSuffix(" 秒")
+        self.idle_interval.setSingleStep(1)
+        self.idle_interval.setValue(settings.idle_switch_interval_seconds)
+
         self.always_on_top = QCheckBox(self)
         self.always_on_top.setChecked(settings.always_on_top)
 
@@ -39,6 +57,9 @@ class SettingsDialog(QDialog):
         form = QFormLayout()
         form.addRow("移动速度", self.speed)
         form.addRow("说话间隔", self.speech_interval)
+        form.addRow("双击表情速度", self.sticker_speed)
+        form.addRow("动作播放速度", self.character_speed)
+        form.addRow("待机换图间隔", self.idle_interval)
         form.addRow("保持置顶", self.always_on_top)
         form.addRow("边缘限制", self.edge_snap)
 
@@ -59,4 +80,7 @@ class SettingsDialog(QDialog):
             autostart=current.autostart,
             motion_speed_percent=self.speed.value(),
             contract_name=current.contract_name,
+            sticker_playback_percent=self.sticker_speed.value(),
+            character_playback_percent=self.character_speed.value(),
+            idle_switch_interval_seconds=self.idle_interval.value(),
         )

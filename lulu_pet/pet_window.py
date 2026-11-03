@@ -11,6 +11,7 @@ from PySide6.QtGui import QAction, QBitmap, QColor, QImage, QMovie, QPainter, QP
 from PySide6.QtWidgets import QApplication, QMenu, QWidget
 
 from .bubble import BubbleWidget
+from .characters import CHARACTER_SPECS, CharacterSpec, DEFAULT_SPEC
 from .contract_dialog import ContractDialog
 from .controller import PetController
 from .focus_records import FocusRecord, FocusRecordStore
@@ -31,26 +32,7 @@ from .settings_dialog import SettingsDialog
 from .sticker_popup import StickerPopup
 
 
-LOW_QUALITY_STICKER_GIFS = {
-    "lulu_transparent_15.gif",
-    "lulu_transparent_16.gif",
-    "lulu_transparent_17.gif",
-    "lulu_transparent_19.gif",
-    "lulu_transparent_20.gif",
-}
-
-STICKER_PLAYBACK_SPEED_PERCENT = 75
-DEFAULT_CHARACTER_GIF = "lulu_transparent_09.gif"
-SWIMMING_CHARACTER_GIF = "lulu_transparent_01.gif"
-LIFTED_CHARACTER_GIF = "xhs_lulu_01.gif"
-PAJAMA_CHARACTER_GIF = "xhs_lulu_02.gif"
-EXTRA_CHARACTER_GIFS = {
-    "小鸭噜噜": "640 - 2026-05-14T123937.674.gif",
-    "小象噜噜": "640 (81).gif",
-    "野人噜噜": "640 (21).gif",
-    "粉嘟嘟噜": "640 (94).gif",
-    "霸王龙噜": "640 (98).gif",
-}
+# 播放速度与待机换图间隔均已改为可在设置窗口调整，默认值见 settings.py
 FOCUS_MIN_STAGE_MINUTES = 12
 FOCUS_MAX_STAGE_MINUTES = 25
 FOCUS_STICKER_DURATION_MS = 2600
@@ -86,7 +68,6 @@ class PetWindow(QWidget):
         self._sticker_active = False
         self._last_sticker_path: Path | None = None
         self._sticker_play_once = False
-        self._next_sticker_index = 0
         self._resting = False
         self._motion_paused = False
         self._focus_active = False
@@ -98,7 +79,6 @@ class PetWindow(QWidget):
         self._sticker_timer = QTimer(self)
         self._sticker_timer.setSingleShot(True)
         self._sticker_timer.timeout.connect(self._clear_sticker)
-        self._sticker_assets = self._load_sticker_assets()
         self._focus_timer = FocusTimerWidget()
         self._focus_timer.finished_requested.connect(self.end_focus_mode)
         self._focus_records_dialog: FocusRecordsDialog | None = None
@@ -106,20 +86,11 @@ class PetWindow(QWidget):
         self._pre_game_visible = False
         self._pre_game_motion_paused = False
         self._character_key = ""
-        self._rest_character_asset = resource_path("assets", "lulu_transparent_gifs", "qq_lulu_04.gif")
-        self._default_character_asset = resource_path("assets", "lulu_transparent_gifs", DEFAULT_CHARACTER_GIF)
-        self._swimming_character_asset = resource_path("assets", "lulu_transparent_gifs", SWIMMING_CHARACTER_GIF)
-        self._lifted_character_asset = resource_path("assets", "lulu_transparent_gifs", LIFTED_CHARACTER_GIF)
-        self._pajama_character_asset = resource_path("assets", "lulu_transparent_gifs", PAJAMA_CHARACTER_GIF)
-        self._extra_character_assets = {
-            label: resource_path("assets", "lulu_transparent_gifs", filename)
-            for label, filename in EXTRA_CHARACTER_GIFS.items()
-        }
-        self._character_assets = {
-            "body": self._default_character_asset,
-            "lifted": self._lifted_character_asset,
-            "rest": self._rest_character_asset,
-        }
+        # 当前形象（默认呆猫八条），由注册表驱动；切换形象只改这一个 spec
+        self._spec: CharacterSpec = DEFAULT_SPEC
+        # 待机随机池当前播放的 GIF（仅 idle 状态使用）
+        self._idle_current: Path | None = None
+        self._rest_character_asset = self._resolve_rest_asset()
         self._focus_assets = [
             resource_path("assets", "lulu_FocusMode", f"{index}.gif")
             for index in range(1, 6)
@@ -149,6 +120,11 @@ class PetWindow(QWidget):
         self._speech_timer.timeout.connect(self._say_random_line)
         self._speech_timer.start(5000)
 
+        # 待机固定间隔随机切换 GIF（间隔可在设置里调整）
+        self._idle_timer = QTimer(self)
+        self._idle_timer.timeout.connect(self._rotate_idle)
+        self._idle_timer.start(self._idle_interval_ms)
+
     def set_always_on_top(self, enabled: bool, *, save_settings: bool = True) -> None:
         self._always_on_top = enabled
         self.settings = replace(self.settings, always_on_top=enabled)
@@ -166,6 +142,10 @@ class PetWindow(QWidget):
     @property
     def motion_paused(self) -> bool:
         return self._motion_paused
+
+    @property
+    def _idle_interval_ms(self) -> int:
+        return max(1, int(self.settings.idle_switch_interval_seconds)) * 1000
 
     @property
     def focus_mode_active(self) -> bool:
@@ -186,8 +166,16 @@ class PetWindow(QWidget):
     def trigger_sticker(self) -> None:
         if self._focus_active:
             return
-        source = self._next_sticker_asset() if self._sticker_assets else self.controller.assets.random_file_path()
-        self._load_sticker(source or self._character_assets["body"])
+        # 双击表情包：始终从当前形象自己的素材池随机取，避免串成别的形象
+        pool = self._spec.all_gifs()
+        if not pool:
+            self._load_sticker(self._move_asset())
+            return
+        if len(pool) <= 1:
+            source = pool[0]
+        else:
+            source = random.choice([path for path in pool if path != self._last_sticker_path])
+        self._load_sticker(source)
 
     def trigger_focus_mode(self) -> None:
         if self._focus_active:
@@ -236,17 +224,42 @@ class PetWindow(QWidget):
             duration_ms=FOCUS_STICKER_DURATION_MS,
         )
 
-    def show_swimming_character(self) -> None:
-        self._set_body_character(self._swimming_character_asset)
+    def select_character(self, spec: CharacterSpec) -> None:
+        # 切换到指定形象：只替换 spec，后续所有素材/逻辑都从该形象池取
+        self._spec = spec
+        self._idle_current = None
+        self._rest_character_asset = self._resolve_rest_asset()
+        self._reload_current_character()
 
-    def show_pajama_character(self) -> None:
-        self._set_body_character(self._pajama_character_asset)
+    def _resolve_rest_asset(self) -> Path:
+        return self._spec.slot_path(self._spec.rest) or self._move_asset()
 
-    def show_proud_character(self) -> None:
-        self._set_body_character(self._default_character_asset)
+    def _move_asset(self) -> Path:
+        # 无方向移动本体；没有指定时回落到待机池第一张
+        body = self._spec.slot_path(self._spec.move_body)
+        if body is not None:
+            return body
+        return self._spec.idle_pool()[0]
 
-    def show_extra_character(self, label: str) -> None:
-        self._set_body_character(self._extra_character_assets[label])
+    def _slot_asset(self, key: str) -> Path:
+        spec = self._spec
+        if key == "lifted":
+            return spec.slot_path(spec.lifted) or self._move_asset()
+        if key == "rest":
+            return self._resolve_rest_asset()
+        if key == "run_right":
+            return spec.slot_path(spec.run_right) or self._move_asset()
+        if key == "run_left":
+            return spec.slot_path(spec.run_left) or self._move_asset()
+        return self._move_asset()
+
+    def _reload_current_character(self) -> None:
+        self._resting = False
+        self._clear_sticker()
+        self._character_key = ""
+        self._idle_current = None
+        self._apply_character_for_mode(self.motion.mode)
+        self.update()
 
     def sign_contract(self) -> None:
         text, accepted = ContractDialog.get_contract_name(self.settings.contract_name, self)
@@ -263,11 +276,18 @@ class PetWindow(QWidget):
 
     def open_settings(self) -> None:
         dialog = SettingsDialog(self.settings, self)
-        if dialog.exec() != dialog.Accepted:
+        if dialog.exec() != SettingsDialog.Accepted:
             return
         self.settings = dialog.to_settings(self.settings)
         self.controller.speech_interval_seconds = self.settings.speech_interval_seconds
         self.motion.speed_scale = self.settings.motion_speed_percent / 100
+        # 播放速度实时生效（QMovie 运行中也可改）
+        if self._movie:
+            self._movie.setSpeed(self.settings.character_playback_percent)
+        if self._sticker_movie:
+            self._sticker_movie.setSpeed(self.settings.sticker_playback_percent)
+        # 待机换图间隔：重启定时器
+        self._idle_timer.start(self._idle_interval_ms)
         self.set_always_on_top(self.settings.always_on_top, save_settings=False)
         if self.settings_store:
             self.settings_store.save(self.settings)
@@ -288,6 +308,7 @@ class PetWindow(QWidget):
         self.add_games_menu(menu)
         menu.addAction("休息一下", self.trigger_rest)
         menu.addAction("签订契约", self.sign_contract)
+        menu.addAction("设置", self.open_settings)
         self.add_character_change_menu(menu)
         menu.addSeparator()
 
@@ -312,12 +333,13 @@ class PetWindow(QWidget):
         return menu
 
     def add_character_change_menu(self, menu: QMenu) -> QMenu:
+        # 菜单由注册表驱动：每个形象一项，新增形象自动出现，无需改这里
         change_menu = apply_lulu_menu_style(QMenu("更换形象", menu))
-        change_menu.addAction("游泳噜噜", self.show_swimming_character)
-        change_menu.addAction("睡衣噜噜", self.show_pajama_character)
-        change_menu.addAction("得瑟噜噜", self.show_proud_character)
-        for label in EXTRA_CHARACTER_GIFS:
-            change_menu.addAction(label, lambda checked=False, label=label: self.show_extra_character(label))
+        for spec in CHARACTER_SPECS:
+            change_menu.addAction(
+                spec.label,
+                lambda checked=False, s=spec: self.select_character(s),
+            )
         menu.addMenu(change_menu)
         return change_menu
 
@@ -559,7 +581,7 @@ class PetWindow(QWidget):
             painter.translate(self.rect().center())
             painter.rotate(frame.rotation_degrees)
             painter.translate(-self.rect().center())
-        if frame and frame.facing > 0:
+        if self._spec.mirror_facing and frame and frame.facing > 0:
             painter.translate(self.width(), 0)
             painter.scale(-1, 1)
             target.moveLeft(self.width() - target.right())
@@ -576,15 +598,48 @@ class PetWindow(QWidget):
 
     def _apply_character_for_mode(self, mode: MotionMode) -> None:
         key = self._character_key_for_mode(mode)
+        if key == "idle":
+            # 待机：进入随机池；已在待机且已有图时不重复加载
+            if self._character_key == "idle" and self._idle_current is not None:
+                return
+            self._character_key = "idle"
+            self._idle_current = self._pick_idle_asset()
+            self._load_character(self._idle_current)
+            return
         if key == self._character_key:
             return
         self._character_key = key
-        self._load_character(self._character_assets[key])
+        self._idle_current = None
+        self._load_character(self._slot_asset(key))
 
     def _character_key_for_mode(self, mode: MotionMode) -> str:
         if mode in (MotionMode.DRAGGED, MotionMode.FALLING):
             return "lifted"
-        return "body"
+        if mode in (MotionMode.WALK_RIGHT, MotionMode.RUN_RIGHT):
+            return "run_right" if self._spec.run_right else "move"
+        if mode in (MotionMode.WALK_LEFT, MotionMode.RUN_LEFT):
+            return "run_left" if self._spec.run_left else "move"
+        if mode in (MotionMode.ROLL_LEFT, MotionMode.ROLL_RIGHT):
+            return "move"
+        if mode == MotionMode.SLEEP:
+            return "rest" if self._spec.rest else "idle"
+        return "idle"
+
+    def _pick_idle_asset(self) -> Path:
+        pool = self._spec.idle_pool()
+        if len(pool) <= 1:
+            return pool[0]
+        # 排除当前这张，避免连续重复
+        return random.choice([path for path in pool if path != self._idle_current])
+
+    def _rotate_idle(self) -> None:
+        # 固定间隔回调：仅在真正待机（非表情/休息/专注）时随机换图
+        if self._character_key != "idle":
+            return
+        if self._sticker_active or self._resting or self._focus_active:
+            return
+        self._idle_current = self._pick_idle_asset()
+        self._load_character(self._idle_current)
 
     def _load_character(self, path: Path) -> None:
         if self._movie:
@@ -593,6 +648,7 @@ class PetWindow(QWidget):
         self._pixmap = QPixmap()
         movie = QMovie(str(path))
         if movie.isValid():
+            movie.setSpeed(self.settings.character_playback_percent)
             movie.frameChanged.connect(lambda _: self._set_character_frame(movie))
             self._movie = movie
             movie.start()
@@ -601,14 +657,7 @@ class PetWindow(QWidget):
         pixmap = QPixmap(str(path))
         if not pixmap.isNull():
             self._pixmap = pixmap
-
-    def _set_body_character(self, path: Path) -> None:
-        self._character_assets["body"] = path
-        self._resting = False
-        self._clear_sticker()
-        self._character_key = ""
-        self._apply_character_for_mode(self.motion.mode)
-        self.update()
+            self._apply_alpha_mask(self._pixmap)
 
     def _set_character_frame(self, movie: QMovie) -> None:
         self._pixmap = movie.currentPixmap()
@@ -623,7 +672,7 @@ class PetWindow(QWidget):
         movie = QMovie(str(path))
         if movie.isValid():
             movie.setCacheMode(QMovie.CacheAll)
-            movie.setSpeed(STICKER_PLAYBACK_SPEED_PERCENT)
+            movie.setSpeed(self.settings.sticker_playback_percent)
             movie.frameChanged.connect(lambda _: self._set_sticker_frame(movie))
             self._sticker_movie = movie
             self._sticker_active = True
@@ -637,19 +686,6 @@ class PetWindow(QWidget):
         if self._sticker_active:
             self._sticker_timer.start(duration_ms)
             self.update()
-
-    def _next_sticker_asset(self) -> Path:
-        source = self._sticker_assets[self._next_sticker_index % len(self._sticker_assets)]
-        self._next_sticker_index += 1
-        return source
-
-    def _load_sticker_assets(self) -> list[Path]:
-        sticker_dir = resource_path("assets", "lulu_transparent_gifs")
-        return [
-            path
-            for path in sorted(sticker_dir.glob("*.gif"))
-            if path.name not in LOW_QUALITY_STICKER_GIFS
-        ]
 
     def _enter_rest_mode(self) -> None:
         self._resting = True

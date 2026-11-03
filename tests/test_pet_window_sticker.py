@@ -6,6 +6,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 
 from lulu_pet.assets import AssetManager
+from lulu_pet.characters import spec_by_id
 from lulu_pet.controller import PetController
 from lulu_pet.models import PetSettings
 from lulu_pet.motion import MotionMode
@@ -72,7 +73,7 @@ class PetWindowStickerTests(unittest.TestCase):
         finally:
             window.close()
 
-    def test_trigger_sticker_uses_original_transparent_gif_library(self):
+    def test_trigger_sticker_uses_character_matching_gif_library(self):
         settings = PetSettings(
             window_size=(220, 180),
             always_on_top=True,
@@ -83,15 +84,20 @@ class PetWindowStickerTests(unittest.TestCase):
         )
         window = PetWindow(PetController(AssetManager(None)), settings)
         try:
+            # 默认呆猫形象：双击播放呆猫自己的动态 GIF
             window.trigger_sticker()
-
             self.assertIsNotNone(window._last_sticker_path)
-            self.assertIn("lulu_transparent_gifs", str(window._last_sticker_path))
-            self.assertEqual(window._sticker_movie.frameCount() > 1, True)
+            self.assertEqual(window._last_sticker_path.parent, spec_by_id("batiao").dir_path)
+            self.assertTrue(window._sticker_movie.frameCount() > 1)
+
+            # 切到噜噜形象后：双击走噜噜素材池
+            window.select_character(spec_by_id("lulu"))
+            window.trigger_sticker()
+            self.assertEqual(window._last_sticker_path.parent, spec_by_id("lulu").dir_path)
         finally:
             window.close()
 
-    def test_trigger_sticker_uses_next_asset_in_folder_order(self):
+    def test_trigger_sticker_always_stays_inside_current_character_pool(self):
         settings = PetSettings(
             window_size=(220, 180),
             always_on_top=True,
@@ -102,16 +108,16 @@ class PetWindowStickerTests(unittest.TestCase):
         )
         window = PetWindow(PetController(AssetManager(None)), settings)
         try:
-            expected = window._sticker_assets[:3]
+            batiao_pool = set(spec_by_id("batiao").all_gifs())
+            for _ in range(10):
+                window.trigger_sticker()
+                self.assertIn(window._last_sticker_path, batiao_pool)
 
-            window.trigger_sticker()
-            first = window._last_sticker_path
-            window.trigger_sticker()
-            second = window._last_sticker_path
-            window.trigger_sticker()
-            third = window._last_sticker_path
-
-            self.assertEqual([first, second, third], expected)
+            window.select_character(spec_by_id("lulu"))
+            lulu_pool = set(spec_by_id("lulu").all_gifs())
+            for _ in range(10):
+                window.trigger_sticker()
+                self.assertIn(window._last_sticker_path, lulu_pool)
         finally:
             window.close()
 
@@ -241,7 +247,7 @@ class PetWindowStickerTests(unittest.TestCase):
         finally:
             window.close()
 
-    def test_sticker_pool_excludes_low_quality_scene_gifs(self):
+    def test_sticker_uses_whole_character_folder_as_pool(self):
         settings = PetSettings(
             window_size=(220, 180),
             always_on_top=True,
@@ -252,13 +258,12 @@ class PetWindowStickerTests(unittest.TestCase):
         )
         window = PetWindow(PetController(AssetManager(None)), settings)
         try:
-            sticker_names = {path.name for path in window._sticker_assets}
-
-            self.assertNotIn("lulu_transparent_15.gif", sticker_names)
-            self.assertNotIn("lulu_transparent_16.gif", sticker_names)
-            self.assertNotIn("lulu_transparent_17.gif", sticker_names)
-            self.assertNotIn("lulu_transparent_19.gif", sticker_names)
-            self.assertNotIn("lulu_transparent_20.gif", sticker_names)
+            # 双击表情包的可选范围就是当前形象目录里的全部 GIF
+            self.assertEqual(
+                set(window._spec.all_gifs()),
+                set(spec_by_id("batiao").all_gifs()),
+            )
+            self.assertEqual(len(window._spec.all_gifs()), 9)
         finally:
             window.close()
 

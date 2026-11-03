@@ -16,7 +16,7 @@ class RestModeTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
 
-    def test_rest_uses_qq_lulu_04_and_stays_bottom_right(self):
+    def test_rest_uses_cat_rest_and_stays_bottom_right(self):
         settings = PetSettings(
             window_size=(220, 180),
             always_on_top=True,
@@ -43,7 +43,7 @@ class RestModeTests(unittest.TestCase):
             self.assertEqual(start, expected)
             self.assertEqual((window.motion.x, window.motion.y), expected)
             self.assertEqual(window._character_key, "rest")
-            self.assertEqual(window._rest_character_asset.name, "qq_lulu_04.gif")
+            self.assertEqual(window._rest_character_asset.name, "cat_fail.gif")
         finally:
             window.close()
 

@@ -15,6 +15,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "autostart": False,
     "motion_speed_percent": 100,
     "contract_name": "shouting",
+    "sticker_playback_percent": 50,
+    "character_playback_percent": 70,
+    "idle_switch_interval_seconds": 8,
 }
 
 
@@ -48,6 +51,24 @@ class SettingsStore:
                 220,
             ),
             contract_name=_contract_name(data.get("contract_name")),
+            sticker_playback_percent=_bounded_int(
+                data.get("sticker_playback_percent"),
+                DEFAULT_SETTINGS["sticker_playback_percent"],
+                20,
+                100,
+            ),
+            character_playback_percent=_bounded_int(
+                data.get("character_playback_percent"),
+                DEFAULT_SETTINGS["character_playback_percent"],
+                20,
+                100,
+            ),
+            idle_switch_interval_seconds=_bounded_int(
+                data.get("idle_switch_interval_seconds"),
+                DEFAULT_SETTINGS["idle_switch_interval_seconds"],
+                3,
+                60,
+            ),
         )
 
     def save(self, settings: PetSettings) -> None:
@@ -60,6 +81,9 @@ class SettingsStore:
             "autostart": settings.autostart,
             "motion_speed_percent": settings.motion_speed_percent,
             "contract_name": settings.contract_name,
+            "sticker_playback_percent": settings.sticker_playback_percent,
+            "character_playback_percent": settings.character_playback_percent,
+            "idle_switch_interval_seconds": settings.idle_switch_interval_seconds,
         }
         self.path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
